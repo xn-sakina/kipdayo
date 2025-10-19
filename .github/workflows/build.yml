@@ -12,96 +12,11 @@ on:
         required: true
         type: boolean
         default: false
-      platform:
-        description: 'Platform to build (only for test builds)'
-        required: false
-        type: choice
-        options:
-          - 'both'
-          - 'macos'
-          - 'windows'
-        default: 'both'
 
 jobs:
-  build-macos:
-    name: Build macOS App
-    runs-on: macos-latest
-    if: |
-      (inputs.release == true) || 
-      (inputs.release == false && (inputs.platform == 'both' || inputs.platform == 'macos'))
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-          cache: 'pnpm'
-
-      - name: Install Rust stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build macOS app
-        run: |
-          chmod +x scripts/build-macos.sh
-          bash scripts/build-macos.sh
-
-      - name: Get app bundle name
-        id: get-bundle
-        run: |
-          APP_PATH=$(find src-tauri/target -name "*.app" -path "*/bundle/macos/*" -type d | head -n 1)
-          APP_NAME=$(basename "$APP_PATH")
-          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
-          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
-          echo "Found app: $APP_NAME at $APP_PATH"
-
-      - name: Rename app with version (for Release)
-        if: inputs.release == true
-        run: |
-          APP_PATH="${{ steps.get-bundle.outputs.app_path }}"
-          APP_DIR=$(dirname "$APP_PATH")
-          NEW_NAME="vidio_v${{ inputs.version }}.app"
-          mv "$APP_PATH" "$APP_DIR/$NEW_NAME"
-          echo "Renamed to: $NEW_NAME"
-          echo "new_app_name=$NEW_NAME" >> $GITHUB_ENV
-          echo "new_app_path=$APP_DIR/$NEW_NAME" >> $GITHUB_ENV
-
-      - name: Upload macOS artifact (test build)
-        if: inputs.release == false
-        uses: actions/upload-artifact@v4
-        with:
-          name: vidio-macos
-          path: ${{ steps.get-bundle.outputs.app_path }}
-          retention-days: 1
-
-      - name: Upload to Release
-        if: inputs.release == true
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ inputs.version }}
-          name: Vidio v${{ inputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            ${{ env.new_app_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-windows:
     name: Build Windows App
     runs-on: windows-latest
-    if: |
-      (inputs.release == true) || 
-      (inputs.release == false && (inputs.platform == 'both' || inputs.platform == 'windows'))
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

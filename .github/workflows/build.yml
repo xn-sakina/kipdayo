@@ -58,7 +58,7 @@ jobs:
       - name: Get app bundle name
         id: get-bundle
         run: |
-          APP_PATH=$(find src-tauri/target/release/bundle/macos -name "*.app" -type d | head -n 1)
+          APP_PATH=$(find src-tauri/target -name "*.app" -path "*/bundle/macos/*" -type d | head -n 1)
           APP_NAME=$(basename "$APP_PATH")
           echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
           echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
@@ -134,7 +134,7 @@ jobs:
         id: get-installer
         shell: bash
         run: |
-          EXE_PATH=$(find src-tauri/target/release/bundle/nsis -name "*.exe" -type f | head -n 1)
+          EXE_PATH=$(find src-tauri/target -name "*.exe" -path "*/bundle/nsis/*" -type f | head -n 1)
           EXE_NAME=$(basename "$EXE_PATH")
           echo "exe_path=$EXE_PATH" >> $GITHUB_OUTPUT
           echo "exe_name=$EXE_NAME" >> $GITHUB_OUTPUT

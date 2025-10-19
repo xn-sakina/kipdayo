@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use url::Url;
 
 // ==================== 数据结构定义 ====================
 
@@ -32,27 +33,7 @@ struct ViewData {
 
 #[derive(Debug, Deserialize)]
 struct PlayUrlData {
-    dash: Option<DashData>,
     durl: Option<Vec<DurlData>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct DashData {
-    video: Option<Vec<VideoStream>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct VideoStream {
-    #[serde(rename = "baseUrl")]
-    base_url: Option<String>,
-    #[serde(rename = "base_url")]
-    base_url_alt: Option<String>,
-}
-
-impl VideoStream {
-    fn get_url(&self) -> Option<String> {
-        self.base_url.clone().or_else(|| self.base_url_alt.clone())
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +57,22 @@ fn extract_bvid(url: &str) -> Result<String> {
     re.find(&clean)
         .map(|m| m.as_str().to_string())
         .ok_or_else(|| anyhow!("无法从URL中提取BV号"))
+}
+
+/// 替换为公共CDN，避免海外节点
+fn replace_to_public_cdn(url: &str) -> String {
+    // 检查是否是 akamaized.net 域名
+    if url.contains("akamaized.net") {
+        // 提取 hostname 并替换
+        if let Ok(parsed_url) = Url::parse(url) {
+            if let Some(host) = parsed_url.host_str() {
+                return url.replace(host, "upos-sz-mirror08c.bilivideo.com");
+            }
+        }
+    }
+    
+    // 替换 mirrorcosov 为 mirror08c
+    url.replace("mirrorcosov", "mirror08c")
 }
 
 /// 生成浏览器请求头
@@ -159,10 +156,14 @@ async fn get_video_cid(bvid: &str, sessdata: &str) -> Result<VideoInfo> {
     }
 }
 
-/// 获取视频播放URL
+/// 获取视频播放URL (MP4格式)
 async fn get_play_url(bvid: &str, cid: u64, sessdata: &str) -> Result<VideoPlayUrl> {
+    // fnval=1 表示 MP4 格式
+    // qn=80 表示 1080P 清晰度（需要登录）
+    // platform=html5 可以获取无防盗链的MP4流
+    // high_quality=1 可使画质为1080p
     let url = format!(
-        "https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&qn=80&fnval=16&fourk=1",
+        "https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&qn=80&fnval=1&fnver=0&fourk=1&platform=html5&high_quality=1",
         bvid, cid
     );
     let referer = format!("https://www.bilibili.com/video/{}", bvid);
@@ -183,31 +184,20 @@ async fn get_play_url(bvid: &str, cid: u64, sessdata: &str) -> Result<VideoPlayU
 
     if api_response.code == 0 {
         if let Some(data) = api_response.data {
-            // 优先使用DASH格式
-            if let Some(dash) = data.dash {
-                if let Some(video) = dash.video {
-                    if let Some(first_video) = video.first() {
-                        if let Some(url) = first_video.get_url() {
-                            return Ok(VideoPlayUrl {
-                                url,
-                                format: "DASH".to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-
-            // 降级使用MP4格式
+            // MP4 格式的 URL 在 durl 数组中
             if let Some(durl) = data.durl {
                 if let Some(first_durl) = durl.first() {
+                    // 应用 CDN 替换逻辑
+                    let video_url = replace_to_public_cdn(&first_durl.url);
+                    
                     return Ok(VideoPlayUrl {
-                        url: first_durl.url.clone(),
+                        url: video_url,
                         format: "MP4".to_string(),
                     });
                 }
             }
 
-            Err(anyhow!("响应中未找到视频URL"))
+            Err(anyhow!("响应中未找到MP4视频URL（可能该视频仅提供DASH格式）"))
         } else {
             Err(anyhow!("响应中未找到数据"))
         }

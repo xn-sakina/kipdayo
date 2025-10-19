@@ -5,7 +5,6 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Textarea } from "./components/ui/textarea";
-import { Badge } from "./components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Alert, AlertDescription } from "./components/ui/alert";
@@ -16,8 +15,6 @@ import { encrypt, decrypt } from "./lib/crypto";
 interface ParseResult {
   url: string;
   format: string;
-  quality?: number;
-  is_overseas?: boolean;
 }
 
 function App() {
@@ -157,32 +154,6 @@ function App() {
     }
   };
 
-  // 检测视频质量
-  const detectQuality = (url: string): { quality: number; isLowQuality: boolean } => {
-    // 从 URL 中提取质量标识
-    // 例如: 30032 (480P), 30080 (1080P), 30120 (4K) 等
-    const qualityMatch = url.match(/-1-(\d+)\.m4s/);
-    if (qualityMatch) {
-      const qualityCode = parseInt(qualityMatch[1]);
-      // 30032 及以下为低质量 (480P 或更低)
-      return {
-        quality: qualityCode,
-        isLowQuality: qualityCode <= 30032
-      };
-    }
-    return { quality: 0, isLowQuality: false };
-  };
-
-  // 检测地域
-  const detectRegion = (url: string): { isOverseas: boolean; region: string } => {
-    if (url.includes('akamaized.net')) {
-      return { isOverseas: true, region: '海外' };
-    } else if (url.includes('bilivideo.com')) {
-      return { isOverseas: false, region: '国内' };
-    }
-    return { isOverseas: false, region: '未知' };
-  };
-
   return (
     <div className="min-h-screen bg-background p-8">
       <Toaster position="top-center" richColors />
@@ -319,7 +290,7 @@ function App() {
               <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <p>
-                  提供 Cookie 可获取更高清晰度视频(720P/1080P及以上)。未提供 Cookie 时最高仅支持 480P 清晰度。
+                  提供 Cookie 可获取更高清晰度视频。Cookie 将被加密后安全存储在本地。
                 </p>
               </div>
             </div>
@@ -349,35 +320,6 @@ function App() {
                   <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                   <Label className="text-lg font-semibold">解析结果</Label>
                   <span className="text-xs text-muted-foreground">({result.format})</span>
-                  
-                  {/* 质量检测 */}
-                  {(() => {
-                    const qualityInfo = detectQuality(result.url);
-                    if (qualityInfo.quality > 0) {
-                      return (
-                        <Badge 
-                          variant="secondary" 
-                          className={`text-xs ${qualityInfo.isLowQuality ? 'bg-gray-200 text-gray-700' : 'bg-blue-100 text-blue-700'}`}
-                        >
-                          {qualityInfo.isLowQuality ? `低画质(${qualityInfo.quality})` : `高画质(${qualityInfo.quality})`}
-                        </Badge>
-                      );
-                    }
-                    return null;
-                  })()}
-                  
-                  {/* 地域检测 */}
-                  {(() => {
-                    const regionInfo = detectRegion(result.url);
-                    return (
-                      <Badge 
-                        variant="secondary" 
-                        className={`text-xs ${regionInfo.isOverseas ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}
-                      >
-                        {regionInfo.region}线路
-                      </Badge>
-                    );
-                  })()}
                   
                   <Button
                     type="button"

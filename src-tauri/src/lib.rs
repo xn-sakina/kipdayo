@@ -61,8 +61,13 @@ fn extract_bvid(url: &str) -> Result<String> {
 
 /// 替换为公共CDN，避免海外节点
 fn replace_to_public_cdn(url: &str) -> String {
-    // 检查是否是 akamaized.net 域名
+    let mut should_replace = false;
     if url.contains("akamaized.net") {
+        should_replace = true;
+    } else if !url.contains("mirror08c") {
+        should_replace = true;
+    }
+    if should_replace {
         // 提取 hostname 并替换
         if let Ok(parsed_url) = Url::parse(url) {
             if let Some(host) = parsed_url.host_str() {
@@ -70,9 +75,7 @@ fn replace_to_public_cdn(url: &str) -> String {
             }
         }
     }
-    
-    // 替换 mirrorcosov 为 mirror08c
-    url.replace("mirrorcosov", "mirror08c")
+    url.to_string()
 }
 
 /// 生成浏览器请求头
@@ -102,10 +105,13 @@ fn generate_headers(sessdata: &str, referer: &str) -> reqwest::header::HeaderMap
         reqwest::header::ORIGIN,
         "https://www.bilibili.com".parse().unwrap(),
     );
-    headers.insert(
-        reqwest::header::COOKIE,
-        format!("SESSDATA={}", sessdata).parse().unwrap(),
-    );
+    // prevent 412 errors
+    if !sessdata.is_empty() {
+        headers.insert(
+            reqwest::header::COOKIE,
+            format!("SESSDATA={}", sessdata).parse().unwrap(),
+        );
+    }
     headers.insert(
         "Sec-Ch-Ua",
         "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\""

@@ -61,7 +61,7 @@ jobs:
         run: |
           EXE_PATH="${{ steps.get-installer.outputs.exe_path }}"
           EXE_DIR=$(dirname "$EXE_PATH")
-          NEW_NAME="vidio_v${{ inputs.version }}.exe"
+          NEW_NAME="kipdayo_v${{ inputs.version }}.exe"
           mv "$EXE_PATH" "$EXE_DIR/$NEW_NAME"
           echo "Renamed to: $NEW_NAME"
           echo "new_exe_name=$NEW_NAME" >> $GITHUB_ENV
@@ -71,7 +71,7 @@ jobs:
         if: inputs.release == false
         uses: actions/upload-artifact@v4
         with:
-          name: vidio-windows
+          name: kipdayo-windows
           path: ${{ steps.get-installer.outputs.exe_path }}
           retention-days: 1
 
@@ -80,7 +80,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
-          name: Vidio v${{ inputs.version }}
+          name: Kipdayo v${{ inputs.version }}
           draft: false
           prerelease: false
           files: |

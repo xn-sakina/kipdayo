@@ -1,10 +1,10 @@
-# Vidio - VRChat Bilibili Video Parser
+# Kipdayo - VRChat Bilibili Video Parser
 
 A desktop application that parses Bilibili video links for playback in VRChat world video players.
 
 ## Download
 
-Get the latest version from the [Releases](https://github.com/xn-sakina/vrchat-vidio/releases) page.
+Get the latest version from the [Releases](https://github.com/xn-sakina/kipdayo/releases) page.
 
 ## Disclaimer
 

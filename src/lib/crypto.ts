@@ -4,6 +4,7 @@
  */
 
 // 固定的盐值（用于密钥派生）
+// NOTE: keep the legacy `vidio` name for compatibility
 const SALT = "vidio-bilibili-parser-v1-salt-2025";
 
 // 从盐值派生密钥

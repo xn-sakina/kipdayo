@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { Store } from "@tauri-apps/plugin-store";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -8,8 +10,9 @@ import { Textarea } from "./components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Alert, AlertDescription } from "./components/ui/alert";
+import { Badge } from "./components/ui/badge";
 import { Toaster, toast } from "sonner";
-import { Loader2, Copy, X, HelpCircle, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Copy, X, HelpCircle, CheckCircle2, AlertCircle, Clipboard } from "lucide-react";
 import { encrypt, decrypt } from "./lib/crypto";
 
 interface ParseResult {
@@ -25,6 +28,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
+  const [version, setVersion] = useState<string>("");
 
   // Initialize store and load saved cookie on mount
   useEffect(() => {
@@ -58,7 +62,17 @@ function App() {
       }
     };
     
+    const loadVersion = async () => {
+      try {
+        const appVersion = await getVersion();
+        setVersion(appVersion);
+      } catch (err) {
+        console.error("Failed to get app version:", err);
+      }
+    };
+    
     initStore();
+    loadVersion();
   }, []);
 
   const handleCookieChange = async (value: string) => {
@@ -154,6 +168,21 @@ function App() {
     }
   };
 
+  const handlePaste = async () => {
+    try {
+      const text = await readText();
+      if (text) {
+        setUrl(text);
+        toast.success("已粘贴剪贴板内容");
+      } else {
+        toast.error("剪贴板为空");
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+      toast.error("读取剪贴板失败");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-8">
       <Toaster position="top-center" richColors />
@@ -161,9 +190,16 @@ function App() {
       <div className="max-w-4xl mx-auto space-y-4">
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="text-3xl font-bold text-center">
-              Bilibili 视频 URL 解析器
-            </CardTitle>
+            <div className="flex items-center justify-center gap-2">
+              <CardTitle className="text-3xl font-bold">
+                Bilibili 视频 URL 解析器
+              </CardTitle>
+              {version && (
+                <Badge variant="secondary" className="text-xs">
+                  v{version}
+                </Badge>
+              )}
+            </div>
             <CardDescription className="text-center">
               解析 Bilibili 视频的真实播放地址
             </CardDescription>
@@ -173,28 +209,42 @@ function App() {
             {/* URL Input */}
             <div className="space-y-2">
               <Label htmlFor="url">视频 URL</Label>
-              <div className="relative">
-                <Input
-                  id="url"
-                  type="text"
-                  placeholder="https://www.bilibili.com/video/BVxxxxxxxxx"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  disabled={loading}
-                  className="pr-10"
-                />
-                {url && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0"
-                    onClick={handleClearUrl}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="url"
+                    type="text"
+                    placeholder="https://www.bilibili.com/video/BVxxxxxxxxx"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
                     disabled={loading}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+                    className="pr-10"
+                    autoComplete="off"
+                  />
+                  {url && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0"
+                      onClick={handleClearUrl}
+                      disabled={loading}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={handlePaste}
+                  disabled={loading}
+                  title="粘贴剪贴板内容"
+                >
+                  <Clipboard className="h-4 w-4" />
+                </Button>
               </div>
             </div>
 

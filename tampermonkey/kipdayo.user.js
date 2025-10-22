@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Kipdayo
-// @namespace    https://github.com/kipdayo
+// @namespace    https://github.com/xn-sakina/kipdayo
 // @version      1.0.0
 // @description  Fetch Bilibili MP4 play URLs directly from the video page and copy them to the clipboard.
 // @author       kipdayo

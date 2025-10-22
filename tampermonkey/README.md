@@ -2,7 +2,7 @@
 
 ## Automatic installation (recommended)
 1. Install the [Tampermonkey](https://www.tampermonkey.net/) extension for your browser.
-2. Open the following install link in a new tab: [`Install Kipdayo`](https://raw.githubusercontent.com/kipdayo/kipdayo/main/tampermonkey/kipdayo.user.js).
+2. Open the following install link in a new tab: [`Install Kipdayo`](https://raw.githubusercontent.com/xn-sakina/kipdayo/main/tampermonkey/kipdayo.user.js).
 3. Tampermonkey should prompt you to review the script and then confirm installation. Accept the prompt to finish.
 
 If the install page does not load because of network restrictions, fall back to the manual method below.

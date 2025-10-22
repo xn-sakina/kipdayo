@@ -22,73 +22,35 @@
   const BUTTON_ID = "tm-kipdayo-button";
   const HIDE_TOGGLE_ID = "tm-kipdayo-hide";
   const HANDLE_ID = "tm-kipdayo-handle";
-  const SHELL_ID = "tm-kipdayo-shell";
   const STORAGE_KEY_HIDDEN = "kipdayo-ui-hidden";
   const MESSAGE_ID = "tm-kipdayo-message";
-  const ACTIVE_RIGHT_VISIBLE = 28;
-  const ACTIVE_RIGHT_COLLAPSED = 6;
-  const MEASURING_CLASS = "tm-measuring";
-  let hiddenSyncFrame = 0;
 
   GM_addStyle(`
     #${CONTAINER_ID} {
       position: fixed;
       bottom: 84px;
-      right: var(--tm-active-right, 28px);
+      right: 28px;
       z-index: 99999;
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-      padding: 6px;
-      --tm-glow-width: calc(100% + 32px);
-      --tm-glow-height: calc(100% + 32px);
-      --tm-collapse-slide: 148px;
-      transition: right 0.45s cubic-bezier(0.4, 0.0, 0.2, 1), padding 0.35s ease;
-      overflow: visible;
+      justify-content: center;
+      padding: 4px;
+      transition: right 0.45s cubic-bezier(0.4, 0.0, 0.2, 1);
     }
     #${CONTAINER_ID}::after {
       content: "";
       position: absolute;
-      width: var(--tm-glow-width);
-      height: var(--tm-glow-height);
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      border-radius: 999px;
-      background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(129, 140, 248, 0.14));
-      filter: blur(12px);
-      opacity: 0.6;
+      inset: 0;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(129, 140, 248, 0.16));
+      filter: blur(18px);
+      opacity: 0.85;
       pointer-events: none;
+      transform: scale(1.05);
       z-index: -1;
     }
     #${CONTAINER_ID}.collapsed {
-      padding: 4px;
-      gap: 0;
-      --tm-glow-width: 56px;
-      --tm-glow-height: 56px;
-    }
-    #${CONTAINER_ID}.collapsed::after {
-      opacity: 0.3;
-      filter: blur(4px);
-    }
-    #${CONTAINER_ID}.tm-measuring,
-    #${CONTAINER_ID}.tm-measuring * {
-      transition: none !important;
-    }
-    #${SHELL_ID} {
-      position: relative;
-      display: flex;
-      align-items: center;
-      transform-origin: right center;
-      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s ease, width 0.35s ease;
-    }
-    #${CONTAINER_ID}.collapsed #${SHELL_ID} {
-      opacity: 0;
-      transform: translateX(calc(0.65 * var(--tm-collapse-slide, 148px) + 16px)) scale(0.94);
-      pointer-events: none;
-      width: 0;
-      overflow: hidden;
+      right: -14px;
     }
     #${BUTTON_ID} {
       position: relative;
@@ -153,57 +115,64 @@
       transform: scale(0.8);
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
-    #${CONTAINER_ID}:not(.collapsed):hover #${HIDE_TOGGLE_ID} {
+    #${CONTAINER_ID}:hover #${HIDE_TOGGLE_ID} {
       opacity: 1;
       transform: scale(1);
     }
     #${CONTAINER_ID}.collapsed #${HIDE_TOGGLE_ID} {
-      opacity: 0;
-      pointer-events: none;
-      transform: scale(0.7);
+      display: none;
+    }
+    #${CONTAINER_ID}.collapsed::after {
+      display: none;
+    }
+    #${CONTAINER_ID}.collapsed #${HANDLE_ID} {
+      box-shadow: none;
     }
     #${HIDE_TOGGLE_ID}:hover {
       background: rgba(30, 41, 59, 0.88);
     }
     #${HANDLE_ID} {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: none;
-      padding: 0;
-      background: rgba(15, 23, 42, 0.88);
+      position: absolute;
+      top: 50%;
+      right: -52px;
+      transform: translateY(-50%) translateX(80%);
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.86);
       color: #e2e8f0;
+      border-radius: 14px 0 0 14px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
-      box-shadow: 0 8px 18px rgba(15, 23, 42, 0.35);
+      box-shadow: 0 14px 32px rgba(15, 23, 42, 0.45);
       display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 6px;
       opacity: 0;
       pointer-events: none;
-      transform: translateX(12px) scale(0.85);
-      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s ease;
     }
-    #${HANDLE_ID}:hover {
-      background: rgba(30, 41, 59, 0.9);
-      box-shadow: 0 10px 22px rgba(15, 23, 42, 0.45);
-    }
-    #${HANDLE_ID} .tm-handle-icon {
-      width: 16px;
-      height: 16px;
-      display: block;
-    }
-    #${HANDLE_ID} .tm-handle-icon svg {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-    #${HANDLE_ID} .tm-handle-icon path {
-      stroke: rgba(224, 231, 255, 0.9);
+    #${HANDLE_ID}::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(56, 189, 248, 0.8);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.7);
     }
     #${CONTAINER_ID}.collapsed #${HANDLE_ID} {
+      transform: translateY(-50%) translateX(0);
       opacity: 1;
       pointer-events: auto;
-      transform: translateX(0) scale(1);
+      color: transparent;
+    }
+    #${CONTAINER_ID}.collapsed #${BUTTON_ID} {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(120%);
+    }
+    #${CONTAINER_ID} #${BUTTON_ID} {
+      transition: transform 0.4s cubic-bezier(0.4, 0.0, 0.2, 1), opacity 0.3s ease;
     }
     #${MESSAGE_ID} {
       position: fixed;
@@ -254,10 +223,6 @@
       container = document.createElement("div");
       container.id = CONTAINER_ID;
       container.setAttribute("aria-live", "polite");
-      container.style.setProperty(
-        "--tm-active-right",
-        `${ACTIVE_RIGHT_VISIBLE}px`
-      );
 
       const button = document.createElement("button");
       button.id = BUTTON_ID;
@@ -279,32 +244,19 @@
         { passive: true }
       );
 
-      const shell = document.createElement("div");
-      shell.id = SHELL_ID;
-      shell.appendChild(button);
-      shell.appendChild(hideButton);
-
-      const handle = document.createElement("button");
+      const handle = document.createElement("div");
       handle.id = HANDLE_ID;
-      handle.type = "button";
-      handle.setAttribute("aria-label", "Show Kipdayo parser");
-      handle.tabIndex = -1;
-      handle.innerHTML = `
-        <span class="tm-handle-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8">
-            <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-        </span>
-      `;
+      handle.textContent = "Kipdayo";
       handle.addEventListener(
         "click",
-        (event) => {
-          event.stopPropagation();
+        () => {
           setHiddenState(false);
         },
         { passive: true }
       );
-      container.appendChild(shell);
+
+      container.appendChild(button);
+      container.appendChild(hideButton);
       container.appendChild(handle);
       document.body.appendChild(container);
     }
@@ -327,66 +279,15 @@
     }
   }
 
-  function updateCollapseMetrics(container, forceExpanded = false) {
-    if (!container) return;
-    const shell = container.querySelector(`#${SHELL_ID}`);
-    if (!shell) return;
-    const style = window.getComputedStyle(container);
-    const gap = parseFloat(style.gap) || 0;
-    const fallback =
-      parseFloat(container.style.getPropertyValue("--tm-collapse-slide")) || 148;
-    container.classList.add(MEASURING_CLASS);
-    const wasCollapsed = container.classList.contains("collapsed");
-    if (forceExpanded && wasCollapsed) {
-      container.classList.remove("collapsed");
-    }
-    const measuredWidth = shell.getBoundingClientRect().width;
-    const slide = measuredWidth ? measuredWidth + gap : fallback;
-    container.style.setProperty("--tm-collapse-slide", `${Math.max(slide, 0)}px`);
-    if (forceExpanded && wasCollapsed) {
-      container.classList.add("collapsed");
-    }
-    container.classList.remove(MEASURING_CLASS);
-  }
-
-  function renderHiddenState(container, hidden) {
-    container.classList.toggle("collapsed", hidden);
-    container.style.setProperty(
-      "--tm-active-right",
-      `${hidden ? ACTIVE_RIGHT_COLLAPSED : ACTIVE_RIGHT_VISIBLE}px`
-    );
-    const shell = container.querySelector(`#${SHELL_ID}`);
-    if (shell) {
-      shell.setAttribute("aria-hidden", hidden ? "true" : "false");
-    }
-    const handle = container.querySelector(`#${HANDLE_ID}`);
-    if (handle) {
-      handle.setAttribute("aria-hidden", hidden ? "false" : "true");
-      handle.tabIndex = hidden ? 0 : -1;
-    }
-  }
-
-  function syncHiddenState(container, hidden) {
-    if (!container) return;
-    renderHiddenState(container, hidden);
-    if (hiddenSyncFrame) {
-      window.cancelAnimationFrame(hiddenSyncFrame);
-    }
-    hiddenSyncFrame = window.requestAnimationFrame(() => {
-      hiddenSyncFrame = 0;
-      const liveContainer = document.getElementById(CONTAINER_ID);
-      if (!liveContainer) return;
-      updateCollapseMetrics(liveContainer, true);
-      renderHiddenState(liveContainer, hidden);
-    });
-  }
-
   function applyHiddenState(container) {
     const hidden = getStoredHidden();
-    syncHiddenState(container, hidden);
+    container.classList.toggle("collapsed", hidden);
   }
 
   function setHiddenState(hidden) {
+    const container = document.getElementById(CONTAINER_ID);
+    if (!container) return;
+    container.classList.toggle("collapsed", hidden);
     try {
       if (hidden) {
         window.localStorage.setItem(STORAGE_KEY_HIDDEN, "1");
@@ -396,9 +297,6 @@
     } catch (err) {
       console.warn("无法持久化隐藏状态", err);
     }
-    const container = document.getElementById(CONTAINER_ID);
-    if (!container) return;
-    syncHiddenState(container, hidden);
   }
 
   function showMessage(type, text) {
@@ -600,20 +498,6 @@
     };
     requestAnimationFrame(check);
   }
-
-  let resizeTimer = 0;
-  window.addEventListener("resize", () => {
-    if (resizeTimer) {
-      window.clearTimeout(resizeTimer);
-    }
-    resizeTimer = window.setTimeout(() => {
-      resizeTimer = 0;
-      const container = document.getElementById(CONTAINER_ID);
-      if (!container) return;
-      const hidden = container.classList.contains("collapsed");
-      syncHiddenState(container, hidden);
-    }, 160);
-  });
 
   function bootstrap() {
     ensureUI();

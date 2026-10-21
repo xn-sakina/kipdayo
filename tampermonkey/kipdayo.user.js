@@ -15,13 +15,18 @@
 // @connect      upos-sz-mirrorcoso1.bilivideo.com
 // @connect      upos-sz-mirror08c.bilivideo.com
 // @connect      upos-sz-mirroralio1.bilivideo.com
+// @connect      upos-sz-mirrorhwb.bilivideo.com
+// @connect      upos-sz-mirrorcosb.bilivideo.com
+// @connect      upos-sz-mirrorbd.bilivideo.com
+// @connect      upos-sz-mirrorali.bilivideo.com
+// @connect      upos-sz-mirroralib.bilivideo.com
 // @run-at       document-idle
 // ==/UserScript==
 
 (function () {
   "use strict";
 
-  const ENABLE_SESSDATA = false; // Set to true to automatically include SESSDATA.
+  const ENABLE_SESSDATA = false; // Set to true to use the browser's Bilibili session; false sends anonymous API requests.
   const DEBUG_FORCE_ENGLISH = false; // Set to true to preview the English UI while debugging; language is detected automatically by default, with no language switcher.
   const UI_LANGUAGE = detectUiLanguage();
   const MESSAGES = {
@@ -46,7 +51,7 @@
       parseError: "解析失败",
       readHiddenError: "无法读取隐藏状态",
       saveHiddenError: "无法持久化隐藏状态",
-      abortProbeError: "取消 CDN 探测失败",
+      abortRequestError: "取消请求失败",
       clipboardFallback: "navigator.clipboard 失败，使用 GM_setClipboard",
       gmClipboardError: "GM_setClipboard 失败",
     },
@@ -71,7 +76,7 @@
       parseError: "Parsing failed",
       readHiddenError: "Failed to read the hidden state",
       saveHiddenError: "Failed to save the hidden state",
-      abortProbeError: "Failed to abort the CDN probe",
+      abortRequestError: "Failed to abort the request",
       clipboardFallback: "navigator.clipboard failed; falling back to GM_setClipboard",
       gmClipboardError: "GM_setClipboard failed",
     },
@@ -98,6 +103,7 @@
 
   // Only localized, script-owned errors may be shown in the UI.
   class UserFacingError extends Error {}
+  class ParseCancelledError extends Error {}
 
   function apiError(key, json) {
     console.error("Bilibili API error", json.code, json.message);
@@ -122,7 +128,7 @@
       "upos-sz-mirroralib.bilivideo.com",
     ],
   ];
-  let isParsing = false;
+  let activeParse = null;
   const CONTAINER_ID = "tm-kipdayo-container";
   const BUTTON_ID = "tm-kipdayo-button";
   const HIDE_TOGGLE_ID = "tm-kipdayo-hide";
@@ -461,6 +467,35 @@
     return null;
   }
 
+  function getVideoKey() {
+    const page = new URLSearchParams(window.location.search).get("p") || "1";
+    return window.location.pathname + "?p=" + page;
+  }
+
+  function cancelActiveParse() {
+    if (!activeParse) return;
+    const task = activeParse;
+    activeParse = null;
+    task.controller.abort();
+    setButtonLoading(false);
+  }
+
+  function isCurrentParse(task) {
+    return activeParse === task && !task.controller.signal.aborted && getVideoKey() === task.key;
+  }
+
+  function throwIfCancelled(signal) {
+    if (signal?.aborted) throw new ParseCancelledError();
+  }
+
+  function abortRequest(request) {
+    try {
+      request?.abort();
+    } catch (err) {
+      console.warn(t("abortRequestError"), err);
+    }
+  }
+
   function replaceCdnHost(url, hostname) {
     const parsed = new URL(url);
     parsed.protocol = "https:";
@@ -469,11 +504,14 @@
     return parsed.href;
   }
 
-  function isSuccessfulResponse(response) {
-    return response.status >= 200 && response.status < 300;
+  function isVideoResponse(response) {
+    if (response.status !== 200 && response.status !== 206) return false;
+    const contentType = (response.responseHeaders || "").match(/^content-type:\s*([^;\r\n]+)/im);
+    return !!contentType && /^(?:video\/[\w.+-]+|application\/(?:octet-stream|mp4)|binary\/octet-stream)$/i
+      .test(contentType[1].trim());
   }
 
-  function probeVideoUrl(url, timeout = CDN_PROBE_TIMEOUT) {
+  function probeVideoUrl(url, timeout = CDN_PROBE_TIMEOUT, signal) {
     let request;
     let settled = false;
     let resolveResult;
@@ -481,22 +519,22 @@
     const promise = new Promise((resolve) => {
       resolveResult = resolve;
     });
-    const finish = (available, abortRequest = false) => {
+    const finish = (available, stopRequest = false) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (abortRequest && request) {
-        try {
-          request.abort();
-        } catch (err) {
-          console.warn(t("abortProbeError"), err);
-        }
-      }
+      signal?.removeEventListener("abort", abort);
+      if (stopRequest) abortRequest(request);
       resolveResult(available);
     };
     const abort = () => finish(false, true);
+    if (signal?.aborted) {
+      abort();
+      return { promise, abort };
+    }
+    signal?.addEventListener("abort", abort, { once: true });
 
-    // Reachability is enough; stop at response headers without downloading the body.
+    // Validate media headers when exposed; the range limits reads in fetch mode.
     timer = window.setTimeout(abort, timeout);
     try {
       request = GM_xmlhttpRequest({
@@ -504,36 +542,42 @@
         url,
         headers: { Range: "bytes=0-0" },
         responseType: "arraybuffer",
-        fetch: false,
+        anonymous: true,
         timeout,
         onreadystatechange: (response) => {
-          if (response.readyState === 2) {
-            finish(isSuccessfulResponse(response), true);
+          if (response.readyState === 2 && response.status > 0 && response.responseHeaders) {
+            finish(isVideoResponse(response), true);
           }
         },
         onprogress: (response) => {
-          if (response.status > 0) finish(isSuccessfulResponse(response), true);
+          if (response.status > 0 && response.responseHeaders) {
+            finish(isVideoResponse(response), true);
+          }
         },
-        onload: (response) => finish(isSuccessfulResponse(response)),
+        onload: (response) => finish(isVideoResponse(response)),
         onerror: () => finish(false),
         ontimeout: abort,
         onabort: () => finish(false),
       });
       // Also handle a synchronous callback before GM returns the request handle.
-      if (settled) request.abort();
+      if (settled) abortRequest(request);
     } catch {
       finish(false);
     }
     return { promise, abort };
   }
 
-  function raceAvailableUrls(urls) {
+  function raceAvailableUrls(urls, signal) {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new ParseCancelledError());
+        return;
+      }
       if (!urls.length) {
         reject(new UserFacingError(t("allCdnsUnavailable")));
         return;
       }
-      const probes = urls.map((url) => probeVideoUrl(url));
+      const probes = urls.map((url) => probeVideoUrl(url, CDN_PROBE_TIMEOUT, signal));
       let remaining = probes.length;
       let settled = false;
       probes.forEach((probe, index) => {
@@ -546,84 +590,119 @@
             resolve(urls[index]);
           } else if (--remaining === 0) {
             settled = true;
-            reject(new UserFacingError(t("allCdnsUnavailable")));
+            reject(signal?.aborted ? new ParseCancelledError() : new UserFacingError(t("allCdnsUnavailable")));
           }
         });
       });
     });
   }
 
-  async function findAvailableVideoUrl(url) {
+  async function findAvailableVideoUrl(url, signal) {
+    throwIfCancelled(signal);
     const layers = CDN_LAYERS.map((hosts) =>
       hosts.map((hostname) => replaceCdnHost(url, hostname))
     );
     for (const [index, candidate] of layers[0].entries()) {
       const timeout = CDN_PROBE_TIMEOUT + index * CDN_LAYER1_TIMEOUT_STEP;
-      if (await probeVideoUrl(candidate, timeout).promise) return candidate;
+      throwIfCancelled(signal);
+      const available = await probeVideoUrl(candidate, timeout, signal).promise;
+      throwIfCancelled(signal);
+      if (available) return candidate;
     }
-    return raceAvailableUrls(layers[1]);
+    return raceAvailableUrls(layers[1], signal);
   }
 
-  function requestJson(url, referer) {
+  function requestJson(url, referer, signal) {
     return new Promise((resolve, reject) => {
-      const headers = {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
-        Accept: "application/json, text/plain, */*",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br, zstd",
-        Referer: referer,
-        Origin: "https://www.bilibili.com",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-        DNT: "1",
-        "Sec-Ch-Ua": '"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"macOS"',
+      let request;
+      let timer;
+      let settled = false;
+      const finish = (error, json, stopRequest = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        if (stopRequest) abortRequest(request);
+        if (error) reject(error);
+        else resolve(json);
       };
-      const sessdata = getSessdataIfEnabled();
-      if (sessdata) {
-        headers["Cookie"] = `SESSDATA=${sessdata}`;
+      const abort = () => finish(new ParseCancelledError(), undefined, true);
+      if (signal?.aborted) {
+        abort();
+        return;
       }
+      signal?.addEventListener("abort", abort, { once: true });
+      // Anonymous requests use fetch mode, where Tampermonkey's timeout may be ignored.
+      timer = window.setTimeout(() => {
+        finish(new UserFacingError(t("requestTimeout")), undefined, true);
+      }, REQUEST_TIMEOUT);
+      try {
+        const headers = {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+          Accept: "application/json, text/plain, */*",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br, zstd",
+          Referer: referer,
+          Origin: "https://www.bilibili.com",
+          "Sec-Fetch-Dest": "empty",
+          "Sec-Fetch-Mode": "cors",
+          "Sec-Fetch-Site": "same-site",
+          DNT: "1",
+          "Sec-Ch-Ua": '"Chromium";v="154", "Google Chrome";v="154", "Not A(Brand";v="99"',
+          "Sec-Ch-Ua-Mobile": "?0",
+          "Sec-Ch-Ua-Platform": '"macOS"',
+        };
+        const sessdata = getSessdataIfEnabled();
+        if (sessdata) {
+          headers["Cookie"] = `SESSDATA=${sessdata}`;
+        }
 
-      GM_xmlhttpRequest({
-        method: "GET",
-        url,
-        headers,
-        timeout: REQUEST_TIMEOUT,
-        ontimeout: () => reject(new UserFacingError(t("requestTimeout"))),
-        onerror: () => reject(new UserFacingError(t("networkError"))),
-        onload: (response) => {
-          try {
+        request = GM_xmlhttpRequest({
+          method: "GET",
+          url,
+          headers,
+          anonymous: !ENABLE_SESSDATA,
+          timeout: REQUEST_TIMEOUT,
+          ontimeout: () => finish(new UserFacingError(t("requestTimeout")), undefined, true),
+          onerror: () => finish(new UserFacingError(t("networkError"))),
+          onabort: abort,
+          onload: (response) => {
             if (response.status !== 200) {
-              reject(new UserFacingError(t("httpError", { status: response.status })));
+              finish(new UserFacingError(t("httpError", { status: response.status })));
               return;
             }
-            const json = JSON.parse(response.responseText);
-            resolve(json);
-          } catch (err) {
-            reject(new UserFacingError(t("invalidResponse")));
-          }
-        },
-      });
+            try {
+              finish(null, JSON.parse(response.responseText));
+            } catch {
+              finish(new UserFacingError(t("invalidResponse")));
+            }
+          },
+        });
+        if (settled) abortRequest(request);
+      } catch (err) {
+        finish(err);
+      }
     });
   }
 
-  async function fetchVideoInfo(bvid) {
+  async function fetchVideoInfo(bvid, page = 1, signal) {
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new UserFacingError(t("videoInfoError"));
+    }
     const url = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`;
     const referer = `https://www.bilibili.com/video/${bvid}`;
-    const json = await requestJson(url, referer);
+    const json = await requestJson(url, referer, signal);
     if (json.code !== 0 || !json.data) {
       throw apiError("videoInfoError", json);
     }
-    return {
-      cid: json.data.cid,
-      aid: json.data.aid,
-    };
+    const selectedPage = json.data.pages?.find((item) => item.page === page);
+    const cid = selectedPage?.cid ?? (page === 1 ? json.data.cid : undefined);
+    if (!cid) throw new UserFacingError(t("videoInfoError"));
+    return { cid, aid: json.data.aid };
   }
 
-  async function fetchPlayUrl(bvid, cid) {
+  async function fetchPlayUrl(bvid, cid, signal) {
     const query = new URLSearchParams({
       bvid,
       cid: String(cid),
@@ -636,20 +715,21 @@
     });
     const url = `https://api.bilibili.com/x/player/playurl?${query.toString()}`;
     const referer = `https://www.bilibili.com/video/${bvid}`;
-    const json = await requestJson(url, referer);
+    const json = await requestJson(url, referer, signal);
     if (json.code !== 0 || !json.data || !json.data.durl || !json.data.durl.length) {
       throw apiError("playUrlError", json);
     }
-    const directUrl = await findAvailableVideoUrl(json.data.durl[0].url);
+    const directUrl = await findAvailableVideoUrl(json.data.durl[0].url, signal);
     return { url: directUrl, format: "MP4" };
   }
 
-  async function copyToClipboard(text) {
-    if (!text) return false;
+  async function copyToClipboard(text, isCurrent = () => true) {
+    if (!text || !isCurrent()) return false;
     try {
       await navigator.clipboard.writeText(text);
       return true;
     } catch (err) {
+      if (!isCurrent()) return false;
       console.warn(t("clipboardFallback"), err);
       try {
         GM_setClipboard(text, "text");
@@ -662,37 +742,49 @@
   }
 
   async function handleButtonClick() {
-    if (isParsing) return;
-    isParsing = true;
+    if (activeParse && activeParse.key !== getVideoKey()) cancelActiveParse();
+    if (activeParse) return;
+    const task = { key: getVideoKey(), controller: new AbortController() };
+    activeParse = task;
     setButtonLoading(true);
     try {
       const bvid = extractBvid();
       if (!bvid) {
         throw new UserFacingError(t("missingBvid"));
       }
-      const info = await fetchVideoInfo(bvid);
-      const result = await fetchPlayUrl(bvid, info.cid);
-      const copied = await copyToClipboard(result.url);
+      const page = Number(new URLSearchParams(window.location.search).get("p") || "1");
+      const signal = task.controller.signal;
+      const info = await fetchVideoInfo(bvid, page, signal);
+      if (!isCurrentParse(task)) return;
+      const result = await fetchPlayUrl(bvid, info.cid, signal);
+      if (!isCurrentParse(task)) return;
+      const copied = await copyToClipboard(result.url, () => isCurrentParse(task));
+      if (!isCurrentParse(task)) return;
       if (!copied) {
         throw new UserFacingError(t("clipboardError"));
       }
       showMessage("success", t("parseSuccess"));
     } catch (err) {
+      if (!isCurrentParse(task) || err instanceof ParseCancelledError) return;
       console.error(t("parseError"), err);
       showMessage("error", t("parseFailed", {
         reason: err instanceof UserFacingError ? err.message : t("unexpectedError"),
       }));
     } finally {
-      isParsing = false;
-      setButtonLoading(false);
+      if (activeParse === task) {
+        activeParse = null;
+        setButtonLoading(false);
+      }
     }
   }
 
   function observeRouteChanges() {
-    let lastPath = location.pathname;
+    let lastKey = getVideoKey();
     const check = () => {
-      if (location.pathname !== lastPath) {
-        lastPath = location.pathname;
+      const key = getVideoKey();
+      if (key !== lastKey) {
+        lastKey = key;
+        if (activeParse && activeParse.key !== key) cancelActiveParse();
         ensureUI();
       }
       requestAnimationFrame(check);

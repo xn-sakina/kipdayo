@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kipdayo
 // @namespace    https://github.com/xn-sakina/kipdayo
-// @version      1.0.0
+// @version      1.1.2
 // @description  Fetch Bilibili MP4 play URLs directly from the video page and copy them to the clipboard.
 // @author       kipdayo
 // @match        https://www.bilibili.com/video/BV*
@@ -10,6 +10,9 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
 // @connect      api.bilibili.com
+// @connect      upos-sz-mirrorcoso1.bilivideo.com
+// @connect      upos-sz-mirror08c.bilivideo.com
+// @connect      upos-sz-mirroralio1.bilivideo.com
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -18,6 +21,23 @@
 
   const ENABLE_SESSDATA = false; // 手动改为 true 才会自动附带 SESSDATA
   const REQUEST_TIMEOUT = 15000;
+  const CDN_PROBE_TIMEOUT = 5000;
+  const CDN_LAYER1_TIMEOUT_STEP = 2000;
+  const CDN_LAYERS = [
+    [
+      "upos-sz-mirrorcoso1.bilivideo.com",
+      "upos-sz-mirror08c.bilivideo.com",
+      "upos-sz-mirroralio1.bilivideo.com",
+    ],
+    [
+      "upos-sz-mirrorhwb.bilivideo.com",
+      "upos-sz-mirrorcosb.bilivideo.com",
+      "upos-sz-mirrorbd.bilivideo.com",
+      "upos-sz-mirrorali.bilivideo.com",
+      "upos-sz-mirroralib.bilivideo.com",
+    ],
+  ];
+  let isParsing = false;
   const CONTAINER_ID = "tm-kipdayo-container";
   const BUTTON_ID = "tm-kipdayo-button";
   const HIDE_TOGGLE_ID = "tm-kipdayo-hide";
@@ -352,20 +372,107 @@
     return null;
   }
 
-  function replaceToPublicCdn(url) {
-    if (!url) return url;
-    if (url.includes("upos-sz-mirror08c.bilivideo.com")) {
-      return url;
-    }
-    if (url.includes("akamaized.net") || !url.includes("mirror08c")) {
-      try {
-        const parsed = new URL(url);
-        return url.replace(parsed.hostname, "upos-sz-mirror08c.bilivideo.com");
-      } catch (err) {
-        console.warn("无法替换 CDN 主机", err);
+  function replaceCdnHost(url, hostname) {
+    const parsed = new URL(url);
+    parsed.protocol = "https:";
+    parsed.hostname = hostname;
+    parsed.port = "";
+    return parsed.href;
+  }
+
+  function isSuccessfulResponse(response) {
+    return response.status >= 200 && response.status < 300;
+  }
+
+  function probeVideoUrl(url, timeout = CDN_PROBE_TIMEOUT) {
+    let request;
+    let settled = false;
+    let resolveResult;
+    let timer;
+    const promise = new Promise((resolve) => {
+      resolveResult = resolve;
+    });
+    const finish = (available, abortRequest = false) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (abortRequest && request) {
+        try {
+          request.abort();
+        } catch (err) {
+          console.warn("取消 CDN 探测失败", err);
+        }
       }
+      resolveResult(available);
+    };
+    const abort = () => finish(false, true);
+
+    // Reachability is enough; stop at response headers without downloading the body.
+    timer = window.setTimeout(abort, timeout);
+    try {
+      request = GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        headers: { Range: "bytes=0-0" },
+        responseType: "arraybuffer",
+        fetch: false,
+        timeout,
+        onreadystatechange: (response) => {
+          if (response.readyState === 2) {
+            finish(isSuccessfulResponse(response), true);
+          }
+        },
+        onprogress: (response) => {
+          if (response.status > 0) finish(isSuccessfulResponse(response), true);
+        },
+        onload: (response) => finish(isSuccessfulResponse(response)),
+        onerror: () => finish(false),
+        ontimeout: abort,
+        onabort: () => finish(false),
+      });
+      // Also handle a synchronous callback before GM returns the request handle.
+      if (settled) request.abort();
+    } catch {
+      finish(false);
     }
-    return url;
+    return { promise, abort };
+  }
+
+  function raceAvailableUrls(urls) {
+    return new Promise((resolve, reject) => {
+      if (!urls.length) {
+        reject(new Error("所有 CDN 均不可用，请稍后重试"));
+        return;
+      }
+      const probes = urls.map((url) => probeVideoUrl(url));
+      let remaining = probes.length;
+      let settled = false;
+      probes.forEach((probe, index) => {
+        probe.promise.then((available) => {
+          if (settled) return;
+          if (available) {
+            settled = true;
+            // Cancel in this callback, before entering the clipboard/success flow.
+            probes.forEach((other) => other.abort());
+            resolve(urls[index]);
+          } else if (--remaining === 0) {
+            settled = true;
+            reject(new Error("所有 CDN 均不可用，请稍后重试"));
+          }
+        });
+      });
+    });
+  }
+
+  async function findAvailableVideoUrl(url) {
+    const layers = CDN_LAYERS.map((hosts) =>
+      hosts.map((hostname) => replaceCdnHost(url, hostname))
+    );
+    for (const [index, candidate] of layers[0].entries()) {
+      const timeout = CDN_PROBE_TIMEOUT + index * CDN_LAYER1_TIMEOUT_STEP;
+      if (await probeVideoUrl(candidate, timeout).promise) return candidate;
+    }
+    return raceAvailableUrls(layers[1]);
   }
 
   function requestJson(url, referer) {
@@ -444,7 +551,7 @@
     if (json.code !== 0 || !json.data || !json.data.durl || !json.data.durl.length) {
       throw new Error(json.message || "未找到可用的播放地址");
     }
-    const directUrl = replaceToPublicCdn(json.data.durl[0].url);
+    const directUrl = await findAvailableVideoUrl(json.data.durl[0].url);
     return { url: directUrl, format: "MP4" };
   }
 
@@ -466,6 +573,8 @@
   }
 
   async function handleButtonClick() {
+    if (isParsing) return;
+    isParsing = true;
     setButtonLoading(true);
     try {
       const bvid = extractBvid();
@@ -483,6 +592,7 @@
       console.error("解析失败", err);
       showMessage("error", `解析失败：${err instanceof Error ? err.message : err}`);
     } finally {
+      isParsing = false;
       setButtonLoading(false);
     }
   }

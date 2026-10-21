@@ -20,6 +20,89 @@
   "use strict";
 
   const ENABLE_SESSDATA = false; // 手动改为 true 才会自动附带 SESSDATA
+  const DEBUG_FORCE_ENGLISH = false; // 调试时改为 true 可预览英文 UI；默认自动检测，不提供语言切换入口
+  const UI_LANGUAGE = detectUiLanguage();
+  const MESSAGES = {
+    zh: {
+      parseAndCopy: "解析并复制",
+      parsing: "解析中…",
+      hideParser: "隐藏 Kipdayo 解析器",
+      showParser: "显示 Kipdayo 解析器",
+      allCdnsUnavailable: "所有 CDN 均不可用，请稍后重试",
+      requestTimeout: "请求超时",
+      networkError: "网络请求失败",
+      httpError: "请求失败，状态码 {status}",
+      invalidResponse: "响应解析失败",
+      videoInfoError: "获取视频信息失败",
+      playUrlError: "未找到可用的播放地址",
+      apiError: "{message}（错误码 {code}）",
+      missingBvid: "当前页面未找到 BV 号",
+      clipboardError: "复制到剪贴板失败",
+      parseSuccess: "解析成功，已复制直链到剪贴板 ✨",
+      parseFailed: "解析失败：{reason}",
+      unexpectedError: "发生未知错误，请稍后重试",
+      parseError: "解析失败",
+      readHiddenError: "无法读取隐藏状态",
+      saveHiddenError: "无法持久化隐藏状态",
+      abortProbeError: "取消 CDN 探测失败",
+      clipboardFallback: "navigator.clipboard 失败，使用 GM_setClipboard",
+      gmClipboardError: "GM_setClipboard 失败",
+    },
+    en: {
+      parseAndCopy: "Parse & Copy",
+      parsing: "Parsing…",
+      hideParser: "Hide Kipdayo parser",
+      showParser: "Show Kipdayo parser",
+      allCdnsUnavailable: "All CDNs are unavailable. Please try again later.",
+      requestTimeout: "Request timed out",
+      networkError: "Network request failed",
+      httpError: "Request failed with status {status}",
+      invalidResponse: "Failed to parse the response",
+      videoInfoError: "Failed to fetch video information",
+      playUrlError: "No playable video URL found",
+      apiError: "{message} (error code {code})",
+      missingBvid: "No BV ID found on this page",
+      clipboardError: "Failed to copy to the clipboard",
+      parseSuccess: "Success! Direct URL copied to the clipboard ✨",
+      parseFailed: "Parsing failed: {reason}",
+      unexpectedError: "An unexpected error occurred. Please try again later.",
+      parseError: "Parsing failed",
+      readHiddenError: "Failed to read the hidden state",
+      saveHiddenError: "Failed to save the hidden state",
+      abortProbeError: "Failed to abort the CDN probe",
+      clipboardFallback: "navigator.clipboard failed; falling back to GM_setClipboard",
+      gmClipboardError: "GM_setClipboard failed",
+    },
+  };
+
+  function detectUiLanguage() {
+    if (DEBUG_FORCE_ENGLISH) return "en";
+    try {
+      // Only use the primary language; do not scan secondary preferences.
+      const primaryLanguage = navigator.languages?.[0] || navigator.language ||
+        Intl.DateTimeFormat().resolvedOptions().locale;
+      const locale = new Intl.Locale(primaryLanguage.replace(/_/g, "-"));
+      // Preserve explicit regions (e.g. zh-SG); infer one only when absent (zh / zh-Hant).
+      const region = locale.region || locale.maximize().region;
+      return ["CN", "TW", "HK"].includes(region) ? "zh" : "en";
+    } catch {
+      return "en";
+    }
+  }
+
+  function t(key, values = {}) {
+    return MESSAGES[UI_LANGUAGE][key].replace(/\{(\w+)\}/g, (_, name) => String(values[name]));
+  }
+
+  // Only localized, script-owned errors may be shown in the UI.
+  class UserFacingError extends Error {}
+
+  function apiError(key, json) {
+    console.error("Bilibili API error", json.code, json.message);
+    return new UserFacingError(Number.isFinite(json.code)
+      ? t("apiError", { message: t(key), code: json.code })
+      : t(key));
+  }
   const REQUEST_TIMEOUT = 15000;
   const CDN_PROBE_TIMEOUT = 5000;
   const CDN_LAYER1_TIMEOUT_STEP = 2000;
@@ -243,17 +326,18 @@
       container = document.createElement("div");
       container.id = CONTAINER_ID;
       container.setAttribute("aria-live", "polite");
+      container.lang = UI_LANGUAGE === "zh" ? "zh-CN" : "en";
 
       const button = document.createElement("button");
       button.id = BUTTON_ID;
       button.type = "button";
-      button.innerHTML = `<span class="tm-label">解析并复制</span>`;
+      button.innerHTML = `<span class="tm-label">${t("parseAndCopy")}</span>`;
       button.addEventListener("click", handleButtonClick, { passive: true });
 
       const hideButton = document.createElement("button");
       hideButton.id = HIDE_TOGGLE_ID;
       hideButton.type = "button";
-      hideButton.setAttribute("aria-label", "Hide Kipdayo parser");
+      hideButton.setAttribute("aria-label", t("hideParser"));
       hideButton.innerHTML = "<span>✕</span>";
       hideButton.addEventListener(
         "click",
@@ -267,6 +351,8 @@
       const handle = document.createElement("div");
       handle.id = HANDLE_ID;
       handle.textContent = "Kipdayo";
+      handle.title = t("showParser");
+      handle.setAttribute("aria-label", t("showParser"));
       handle.addEventListener(
         "click",
         () => {
@@ -285,6 +371,7 @@
     if (!document.getElementById(MESSAGE_ID)) {
       const message = document.createElement("div");
       message.id = MESSAGE_ID;
+      message.lang = UI_LANGUAGE === "zh" ? "zh-CN" : "en";
       message.innerHTML = `<span class="tm-status-dot"></span><span class="tm-text"></span>`;
       document.body.appendChild(message);
     }
@@ -294,7 +381,7 @@
     try {
       return window.localStorage.getItem(STORAGE_KEY_HIDDEN) === "1";
     } catch (err) {
-      console.warn("无法读取隐藏状态", err);
+      console.warn(t("readHiddenError"), err);
       return false;
     }
   }
@@ -315,7 +402,7 @@
         window.localStorage.removeItem(STORAGE_KEY_HIDDEN);
       }
     } catch (err) {
-      console.warn("无法持久化隐藏状态", err);
+      console.warn(t("saveHiddenError"), err);
     }
   }
 
@@ -343,7 +430,7 @@
     if (loading) {
       button.classList.add("loading");
       button.dataset.originalContent = button.innerHTML;
-      button.innerHTML = `<span class="tm-spinner"></span><span>解析中…</span>`;
+      button.innerHTML = `<span class="tm-spinner"></span><span>${t("parsing")}</span>`;
     } else {
       button.classList.remove("loading");
       if (button.dataset.originalContent) {
@@ -400,7 +487,7 @@
         try {
           request.abort();
         } catch (err) {
-          console.warn("取消 CDN 探测失败", err);
+          console.warn(t("abortProbeError"), err);
         }
       }
       resolveResult(available);
@@ -441,7 +528,7 @@
   function raceAvailableUrls(urls) {
     return new Promise((resolve, reject) => {
       if (!urls.length) {
-        reject(new Error("所有 CDN 均不可用，请稍后重试"));
+        reject(new UserFacingError(t("allCdnsUnavailable")));
         return;
       }
       const probes = urls.map((url) => probeVideoUrl(url));
@@ -457,7 +544,7 @@
             resolve(urls[index]);
           } else if (--remaining === 0) {
             settled = true;
-            reject(new Error("所有 CDN 均不可用，请稍后重试"));
+            reject(new UserFacingError(t("allCdnsUnavailable")));
           }
         });
       });
@@ -503,18 +590,18 @@
         url,
         headers,
         timeout: REQUEST_TIMEOUT,
-        ontimeout: () => reject(new Error("请求超时")),
-        onerror: () => reject(new Error("网络请求失败")),
+        ontimeout: () => reject(new UserFacingError(t("requestTimeout"))),
+        onerror: () => reject(new UserFacingError(t("networkError"))),
         onload: (response) => {
           try {
             if (response.status !== 200) {
-              reject(new Error(`请求失败，状态码 ${response.status}`));
+              reject(new UserFacingError(t("httpError", { status: response.status })));
               return;
             }
             const json = JSON.parse(response.responseText);
             resolve(json);
           } catch (err) {
-            reject(new Error("响应解析失败"));
+            reject(new UserFacingError(t("invalidResponse")));
           }
         },
       });
@@ -526,7 +613,7 @@
     const referer = `https://www.bilibili.com/video/${bvid}`;
     const json = await requestJson(url, referer);
     if (json.code !== 0 || !json.data) {
-      throw new Error(json.message || "获取视频信息失败");
+      throw apiError("videoInfoError", json);
     }
     return {
       cid: json.data.cid,
@@ -549,7 +636,7 @@
     const referer = `https://www.bilibili.com/video/${bvid}`;
     const json = await requestJson(url, referer);
     if (json.code !== 0 || !json.data || !json.data.durl || !json.data.durl.length) {
-      throw new Error(json.message || "未找到可用的播放地址");
+      throw apiError("playUrlError", json);
     }
     const directUrl = await findAvailableVideoUrl(json.data.durl[0].url);
     return { url: directUrl, format: "MP4" };
@@ -561,12 +648,12 @@
       await navigator.clipboard.writeText(text);
       return true;
     } catch (err) {
-      console.warn("navigator.clipboard 失败，使用 GM_setClipboard", err);
+      console.warn(t("clipboardFallback"), err);
       try {
         GM_setClipboard(text, "text");
         return true;
       } catch (err2) {
-        console.error("GM_setClipboard 失败", err2);
+        console.error(t("gmClipboardError"), err2);
         return false;
       }
     }
@@ -579,18 +666,20 @@
     try {
       const bvid = extractBvid();
       if (!bvid) {
-        throw new Error("当前页面未找到 BV 号");
+        throw new UserFacingError(t("missingBvid"));
       }
       const info = await fetchVideoInfo(bvid);
       const result = await fetchPlayUrl(bvid, info.cid);
       const copied = await copyToClipboard(result.url);
       if (!copied) {
-        throw new Error("复制到剪贴板失败");
+        throw new UserFacingError(t("clipboardError"));
       }
-      showMessage("success", "解析成功，已复制直链到剪贴板 ✨");
+      showMessage("success", t("parseSuccess"));
     } catch (err) {
-      console.error("解析失败", err);
-      showMessage("error", `解析失败：${err instanceof Error ? err.message : err}`);
+      console.error(t("parseError"), err);
+      showMessage("error", t("parseFailed", {
+        reason: err instanceof UserFacingError ? err.message : t("unexpectedError"),
+      }));
     } finally {
       isParsing = false;
       setButtonLoading(false);

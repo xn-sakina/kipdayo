@@ -2,9 +2,6 @@
 
 A browser script that gets Bilibili videos ready to play in VRChat.
 
-> [!NOTE]
-> Kipdayo now runs entirely as a Tampermonkey script for a simpler, more reliable experience. If you're using the old desktop app (.exe) or an earlier script, switch to the current script linked below. Those older versions no longer work reliably.
-
 ## How it works
 
 Bilibili page URLs don't work directly in VRChat video players. Kipdayo adds a **Parse & Copy** button to Bilibili video pages. Click it to resolve a playable URL and copy it to your clipboard, then paste it into your VRChat video player.
@@ -22,6 +19,10 @@ If the install link doesn't open Tampermonkey, install the script manually:
 2. Open the Tampermonkey dashboard and select **Create a new script**.
 3. Replace the default template with the copied code and save.
 4. Reload the Bilibili video page.
+
+## Migrating from older versions
+
+Kipdayo now runs entirely as a Tampermonkey script for a simpler, more reliable experience. If you're using the old desktop app (.exe) or an earlier script, switch to the current script linked above. Those older versions no longer work reliably.
 
 ## Disclaimer
 

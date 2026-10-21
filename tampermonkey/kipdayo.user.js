@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Kipdayo
 // @namespace    https://github.com/xn-sakina/kipdayo
-// @version      1.1.2
+// @version      2.0.0
+// @updateURL    https://raw.githubusercontent.com/xn-sakina/kipdayo/main/tampermonkey/kipdayo.user.js
+// @downloadURL  https://raw.githubusercontent.com/xn-sakina/kipdayo/main/tampermonkey/kipdayo.user.js
 // @description  Fetch Bilibili MP4 play URLs directly from the video page and copy them to the clipboard.
 // @author       kipdayo
 // @match        https://www.bilibili.com/video/BV*
@@ -19,8 +21,8 @@
 (function () {
   "use strict";
 
-  const ENABLE_SESSDATA = false; // 手动改为 true 才会自动附带 SESSDATA
-  const DEBUG_FORCE_ENGLISH = false; // 调试时改为 true 可预览英文 UI；默认自动检测，不提供语言切换入口
+  const ENABLE_SESSDATA = false; // Set to true to automatically include SESSDATA.
+  const DEBUG_FORCE_ENGLISH = false; // Set to true to preview the English UI while debugging; language is detected automatically by default, with no language switcher.
   const UI_LANGUAGE = detectUiLanguage();
   const MESSAGES = {
     zh: {
